@@ -2,32 +2,61 @@ import { FastifyInstance } from 'fastify'
 import { knex } from '../database'
 import { z } from 'zod'
 import crypto, { randomUUID } from 'node:crypto'
+import { checkSessionIdExists } from '../middlewares/check-session-id-exists'
 
 export async function transactionsRoutes(app: FastifyInstance) {
-  app.get('/', async () => {
-    const transactions = await knex('transactions').select()
+  app.get(
+    '/',
+    {
+      preHandler: [checkSessionIdExists],
+    },
+    async (request) => {
+      const { sessionId } = request.cookies
 
-    return { transactions }
-  })
+      const transactions = await knex('transactions')
+        .where('session_id', sessionId)
+        .select()
 
-  app.get('/:id', async (request) => {
-    const getTransactionParamsSchema = z.object({
-      id: z.string().uuid(),
-    })
+      return { transactions }
+    },
+  )
 
-    const { id } = getTransactionParamsSchema.parse(request.params)
-    const transaction = await knex('transactions').where('id', id).first() // Peço o primeiro resultado pois sei que é único, então não há necessidade de ser array
+  app.get(
+    '/:id',
+    {
+      preHandler: [checkSessionIdExists],
+    },
+    async (request) => {
+      const getTransactionParamsSchema = z.object({
+        id: z.string().uuid(),
+      })
 
-    return { transaction }
-  })
+      const { id } = getTransactionParamsSchema.parse(request.params)
 
-  app.get('/summary', async () => {
-    const summary = await knex('transactions')
-      .sum('amount', { as: 'amount' }) // sum method vai retornar a soma de todos os valores de uma coluna, nesse caso, amount
-      .first()
+      const { sessionId } = request.cookies
+      const transaction = await knex('transactions')
+        .where({ id, session_id: sessionId })
+        .first() // Peço o primeiro resultado pois sei que é único, então não há necessidade de ser array
 
-    return { summary }
-  })
+      return { transaction }
+    },
+  )
+
+  app.get(
+    '/summary',
+    {
+      preHandler: [checkSessionIdExists],
+    },
+    async (request) => {
+      const { sessionId } = request.cookies
+      const summary = await knex('transactions')
+        .where('session_id', sessionId)
+        .sum('amount', { as: 'amount' }) // sum method vai retornar a soma de todos os valores de uma coluna, nesse caso, amount
+        .first()
+
+      return { summary }
+    },
+  )
 
   app.post('/', async (request, reply) => {
     const createTransactionBodySchema = z.object({
